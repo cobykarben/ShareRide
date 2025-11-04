@@ -1,0 +1,247 @@
+erDiagram
+  APP_USER ||--o{ USER_ROLES : has
+  APP_USER ||--|| DRIVER : maps_to
+  APP_USER ||--|| RIDER : maps_to
+  APP_USER ||--o{ EVENT : creates
+  APP_USER ||--o{ RATING : gives
+  APP_USER ||--o{ RATING : receives
+  APP_USER ||--|| NOTIFICATION_PREFERENCE : has
+  APP_USER ||--o{ NOTIFICATION : receives
+  APP_USER ||--o{ AUDIT_LOG : actor
+
+  DRIVER ||--o{ VEHICLE : owns
+  DRIVER ||--o{ RIDE : offers
+
+  RIDER ||--o{ RIDE_APPLICATION : submits
+  RIDER ||--o{ RIDE_SEAT : may_hold
+  RIDER ||--o{ SEAT_HOLD : places
+  RIDER ||--o{ PAYMENT_INTENT : pays
+
+  VEHICLE ||--o{ VEHICLE_SEAT_TEMPLATE : defines
+  VEHICLE ||--o{ RIDE : used_by
+
+  EVENT ||--o{ RIDE : groups
+
+  RIDE ||--o{ RIDE_SEAT : contains
+  RIDE ||--o{ SEAT_HOLD : has
+  RIDE ||--o{ RIDE_APPLICATION : has
+  RIDE ||--o{ COST_QUOTE : quotes
+  RIDE ||--o{ PAYMENT_INTENT : charges
+  RIDE ||--o{ RATING : yields
+
+  APP_USER {
+    uuid user_id PK
+    citext email
+    text password_hash
+    timestamptz verified_at
+    timestamptz created_at
+    timestamptz updated_at
+  }
+
+  USER_ROLES {
+    uuid user_id FK
+    user_role role
+    timestamptz created_at
+  }
+
+  DRIVER {
+    uuid driver_id PK, FK
+    text username
+    citext email
+    text phone
+    text profile_picture
+    numeric driver_rating_avg
+    int driver_rating_count
+    verification_status verification_status
+    jsonb payment_methods
+    bool visibility_public
+    timestamptz last_active
+    timestamptz created_at
+    timestamptz updated_at
+  }
+
+  RIDER {
+    uuid rider_id PK, FK
+    text username
+    citext email
+    text phone
+    text profile_picture
+    numeric rider_rating_avg
+    int rider_rating_count
+    verification_status verification_status
+    jsonb payment_methods
+    bool visibility_public
+    timestamptz last_active
+    timestamptz created_at
+    timestamptz updated_at
+  }
+
+  EVENT {
+    uuid event_id PK
+    text event_name
+    event_type event_type
+    text location
+    numeric latitude
+    numeric longitude
+    timestamptz event_date
+    text description
+    uuid created_by FK
+    event_status status
+    timestamptz created_at
+    timestamptz updated_at
+  }
+
+  VEHICLE {
+    uuid car_id PK
+    uuid driver_id FK
+    text make
+    text model
+    int year
+    vehicle_type vehicle_type
+    text color
+    bytea license_plate_encrypted
+    int seating_capacity
+    text[] amenities
+    timestamptz created_at
+    timestamptz updated_at
+  }
+
+  VEHICLE_SEAT_TEMPLATE {
+    uuid template_id PK
+    uuid car_id FK
+    text label
+    int row_number
+    int col_number
+    jsonb attributes
+  }
+
+  RIDE {
+    uuid ride_id PK
+    uuid driver_id FK
+    uuid car_id FK
+    uuid event_id FK
+    text departure_location
+    numeric departure_latitude
+    numeric departure_longitude
+    timestamptz departure_time
+    timestamptz arrival_time
+    int available_seats
+    int max_riders
+    jsonb seat_map
+    numeric cost_per_person
+    numeric toll_costs
+    numeric gas_costs
+    bool driver_pays_share
+    ride_status status
+    timestamptz created_at
+    timestamptz updated_at
+  }
+
+  RIDE_SEAT {
+    uuid seat_id PK
+    uuid ride_id FK
+    text label
+    int row_number
+    int col_number
+    seat_state state
+    uuid held_by_rider_id FK
+    timestamptz hold_expires_at
+    uuid reserved_by_rider_id FK
+    uuid occupied_by_rider_id FK
+  }
+
+  SEAT_HOLD {
+    uuid hold_id PK
+    uuid ride_id FK
+    uuid rider_id FK
+    text seat_label
+    timestamptz created_at
+    timestamptz expires_at
+  }
+
+  RIDE_APPLICATION {
+    uuid application_id PK
+    uuid ride_id FK
+    uuid rider_id FK
+    application_state state
+    text selected_seat_label
+    text driver_note
+    timestamptz created_at
+    timestamptz decided_at
+  }
+
+  COST_QUOTE {
+    uuid quote_id PK
+    uuid ride_id FK
+    bool driver_pays_share
+    numeric cost_per_person
+    numeric toll_costs
+    numeric gas_costs
+    timestamptz created_at
+  }
+
+  PAYMENT_INTENT {
+    uuid intent_id PK
+    uuid ride_id FK
+    uuid rider_id FK
+    uuid quote_id FK
+    numeric amount
+    text currency
+    payment_intent_state state
+    text processor_ref
+    jsonb metadata
+    timestamptz created_at
+    timestamptz updated_at
+  }
+
+  RATING {
+    uuid rating_id PK
+    uuid ride_id FK
+    uuid rater_user_id FK
+    uuid ratee_user_id FK
+    int stars
+    text review
+    timestamptz created_at
+  }
+
+  NOTIFICATION_PREFERENCE {
+    uuid user_id PK, FK
+    notification_channel[] channels
+    text[] categories
+    timestamptz updated_at
+  }
+
+  NOTIFICATION {
+    uuid notification_id PK
+    uuid user_id FK
+    text category
+    notification_channel channel
+    jsonb payload
+    timestamptz created_at
+  }
+
+  AUDIT_LOG {
+    uuid audit_id PK
+    uuid user_id FK
+    text action
+    text entity_type
+    uuid entity_id
+    jsonb metadata
+    timestamptz created_at
+  }
+
+  IDEMPOTENCY_KEY {
+    uuid key_id PK
+    text scope
+    text idempotency_key
+    text response_hash
+    timestamptz created_at
+  }
+
+  FEATURE_FLAG {
+    text flag_name PK
+    bool enabled
+    timestamptz updated_at
+  }
+
+

@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>ShareRide — Event Rides</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="./styles.css">
+  </head>
+  <body>
+    <header class="site-header">
+      <div class="container header-inner">
+        <div class="brand">
+          <div class="logo" aria-hidden="true">SR</div>
+          <span class="brand-name">ShareRide</span>
+        </div>
+        <nav class="nav">
+          <a href="#events" class="nav-link">Events</a>
+          <a href="#rides" class="nav-link">Rides</a>
+          <button id="loginBtn" class="button ghost">Sign in</button>
+        </nav>
+      </div>
+    </header>
+
+    <main>
+      <section class="hero">
+        <div class="container hero-inner">
+          <h1>Find a ride to your next event</h1>
+          <p class="sub">Event‑centric carpooling with seat selection and transparent cost sharing.</p>
+          <div class="search-bar">
+            <input id="searchInput" type="text" placeholder="Search events by name, type, or city…" aria-label="Search events">
+            <input id="dateInput" type="date" aria-label="Filter by date">
+            <button id="searchBtn" class="button primary">Search</button>
+          </div>
+        </div>
+      </section>
+
+      <section id="events" class="section">
+        <div class="container">
+          <div class="section-head">
+            <h2>Upcoming Events</h2>
+            <div class="filters">
+              <select id="typeFilter" aria-label="Filter by type">
+                <option value="">All types</option>
+                <option value="concert">Concert</option>
+                <option value="sports">Sports</option>
+                <option value="conference">Conference</option>
+                <option value="festival">Festival</option>
+                <option value="meetup">Meetup</option>
+              </select>
+            </div>
+          </div>
+          <div id="eventList" class="card-grid" role="list"></div>
+        </div>
+      </section>
+
+      <section id="rides" class="section alt">
+        <div class="container">
+          <div class="section-head">
+            <h2>Rides</h2>
+            <p id="ridesSubtitle" class="muted">Select an event to view available rides.</p>
+          </div>
+          <div id="rideList" class="card-grid" role="list"></div>
+        </div>
+      </section>
+
+      <section id="seatSection" class="section">
+        <div class="container">
+          <div class="section-head">
+            <h2>Seat Map</h2>
+            <p id="seatSubtitle" class="muted">Choose a ride to view seats.</p>
+          </div>
+          <div id="seatPanel" class="seat-panel hidden">
+            <div class="seat-meta">
+              <h3 id="seatRideTitle">Vehicle</h3>
+              <div class="legend">
+                <span class="chip available">Available</span>
+                <span class="chip reserved">Reserved</span>
+                <span class="chip occupied">Occupied</span>
+                <span class="chip selected">Selected</span>
+              </div>
+            </div>
+            <div id="seatMap" class="seat-map" aria-live="polite"></div>
+            <div class="seat-actions">
+              <div id="selectedSeat" class="muted">No seat selected</div>
+              <button id="applyBtn" class="button primary" disabled>Apply to ride</button>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <div class="container footer-inner">
+        <div>© <span id="year"></span> ShareRide</div>
+        <div class="footer-links">
+          <a href="#" class="muted">Privacy</a>
+          <a href="#" class="muted">Terms</a>
+        </div>
+      </div>
+    </footer>
+
+    <div id="modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+      <div class="modal-content">
+        <h3 id="modalTitle">Apply to ride</h3>
+        <p id="modalBody" class="muted">Confirm your request. You can specify a short note for the driver.</p>
+        <label class="field">
+          <span>Note to driver (optional)</span>
+          <textarea id="applyNote" rows="3" placeholder="e.g., Bringing small bag; prefer window."></textarea>
+        </label>
+        <div class="modal-actions">
+          <button id="cancelModal" class="button ghost">Cancel</button>
+          <button id="confirmApply" class="button primary">Submit</button>
+        </div>
+      </div>
+    </div>
+
+    <script src="./script.js"></script>
+  </body>
+  </html>
+
+
