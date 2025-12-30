@@ -49,8 +49,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Success! User is now authenticated
-    // Redirect to dashboard (or next URL if specified)
-    // Note: If you don't have a /dashboard route yet, you can change this to "/" or "/profile/setup"
+    // Redirect to homepage (or next URL if specified)
     const redirectUrl = next || "/dashboard";
     return NextResponse.redirect(new URL(redirectUrl, requestUrl.origin));
   } catch (error) {

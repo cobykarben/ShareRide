@@ -19,7 +19,7 @@ export default function Home() {
             <Car className="h-12 w-12 text-primary" />
             <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold tracking-tight">
               ShareRide
-            </h1>
+          </h1>
           </div>
           <h2 className="text-3xl md:text-4xl lg:text-5xl font-bold tracking-tight max-w-3xl">
             Find or Share Rides to Events
@@ -124,7 +124,7 @@ export default function Home() {
                   <h4 className="font-semibold">Choose Your Seat</h4>
                   <p className="text-sm text-muted-foreground">
                     Interactive seat maps let you pick your preferred spot.
-                  </p>
+          </p>
                 </div>
               </div>
             </CardContent>
