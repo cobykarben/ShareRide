@@ -74,9 +74,11 @@ export async function POST(request: NextRequest) {
     if (profilePicture && profilePicture.size > 0) {
       try {
         // Generate unique filename: user-id-timestamp.ext
+        // Upload directly to bucket root (not in a subfolder) to match RLS policy
         const fileExt = profilePicture.name.split(".").pop();
         const fileName = `${user.id}-${Date.now()}.${fileExt}`;
-        const filePath = `profile-pictures/${fileName}`;
+        // Upload to bucket root - RLS policy checks if name starts with user ID
+        const filePath = fileName;
 
         // Convert File to ArrayBuffer for upload
         const arrayBuffer = await profilePicture.arrayBuffer();

@@ -8,10 +8,14 @@
  * 
  * Note: ShareRide uses unified profiles - there's NO distinction between "driver" and "rider" roles.
  * All users have the same profile structure and can both drive and ride (as long as they meet prerequisites).
+ * 
+ * IMPLEMENTATION NOTE: Uses module-level singleton for auth subscription to prevent duplicates
+ * in React Strict Mode double-mount scenarios. Each hook instance registers callbacks that are
+ * called when auth state changes, ensuring consistent state across all instances.
  */
 
-import { useState, useEffect, useCallback, useMemo } from "react";
-import { User } from "@supabase/supabase-js";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { User, type AuthChangeEvent, type Session } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/client";
 import type { Database } from "@/types/database.types";
 
@@ -37,111 +41,230 @@ interface UseAuthReturn {
   refreshProfile: () => Promise<void>;
 }
 
-export function useAuth(): UseAuthReturn {
-  const [user, setUser] = useState<User | null>(null);
-  const [profile, setProfile] = useState<Profile | null>(null);
-  const [loading, setLoading] = useState<boolean>(true);
-  const [error, setError] = useState<string | null>(null);
+// Module-level singleton for auth subscription
+// This ensures only one subscription exists, even in React Strict Mode
+type AuthStateCallback = (user: User | null, profile: Profile | null, loading: boolean, error: string | null) => void;
 
-  // Use singleton Supabase client - memoized to ensure stable reference
-  const supabase = useMemo(() => createClient(), []);
+class AuthManager {
+  private supabase = createClient();
+  private subscription: ReturnType<typeof this.supabase.auth.onAuthStateChange>["data"]["subscription"] | null = null;
+  private callbacks = new Set<AuthStateCallback>();
+  private currentUser: User | null = null;
+  private currentProfile: Profile | null = null;
+  private isLoading = true;
+  private error: string | null = null;
+  private initializationPromise: Promise<void> | null = null;
 
-  /**
-   * Fetch profile data for the current user
-   * This gets the extended profile information from the profiles table
-   */
-  const fetchProfile = useCallback(async (userId: string) => {
+  constructor() {
+    if (process.env.NODE_ENV !== "production") {
+      console.log("[auth-manager] created singleton instance");
+    }
+    this.initialize();
+  }
+
+  private async initialize() {
+    if (this.initializationPromise) {
+      return this.initializationPromise;
+    }
+
+    this.initializationPromise = (async () => {
+      try {
+        if (process.env.NODE_ENV !== "production") {
+          console.log("[auth-manager] initializing");
+        }
+
+        // Get initial session
+        const {
+          data: { session },
+          error: sessionError,
+        } = await this.supabase.auth.getSession();
+
+        if (sessionError) {
+          console.error("[auth-manager] Error getting session:", sessionError);
+          this.error = sessionError.message;
+          this.currentUser = null;
+          this.currentProfile = null;
+          this.isLoading = false;
+          this.notifyAll();
+          return;
+        }
+
+        if (session?.user) {
+          this.currentUser = session.user;
+          await this.fetchProfile(session.user.id);
+        } else {
+          this.currentUser = null;
+          this.currentProfile = null;
+        }
+
+        this.isLoading = false;
+        this.notifyAll();
+
+        // Set up auth state change listener (only once)
+        if (!this.subscription) {
+          const { data: { subscription } } = this.supabase.auth.onAuthStateChange(
+            async (event: AuthChangeEvent, session: Session | null) => {
+              if (process.env.NODE_ENV !== "production") {
+                console.log("[auth-manager] auth state changed:", event, "user:", session?.user?.id ?? null);
+              }
+
+              if (session?.user) {
+                this.currentUser = session.user;
+                this.isLoading = true;
+                this.notifyAll();
+                await this.fetchProfile(session.user.id);
+                this.isLoading = false;
+              } else {
+                this.currentUser = null;
+                this.currentProfile = null;
+                this.isLoading = false;
+              }
+
+              this.notifyAll();
+            }
+          );
+          this.subscription = subscription;
+        }
+      } catch (err) {
+        console.error("[auth-manager] Initialization error:", err);
+        this.error = err instanceof Error ? err.message : "Failed to initialize auth";
+        this.isLoading = false;
+        this.notifyAll();
+      }
+    })();
+
+    return this.initializationPromise;
+  }
+
+  private async fetchProfile(userId: string): Promise<void> {
     try {
-      const { data, error: profileError } = await supabase
+      if (process.env.NODE_ENV !== "production") {
+        const { data: sessionData } = await this.supabase.auth.getSession();
+        console.log("[profile] fetchProfile start", {
+          requestedUserId: userId,
+          hasSession: !!sessionData.session,
+          sessionUserId: sessionData.session?.user?.id ?? null,
+          tokenPrefix: sessionData.session?.access_token?.slice(0, 12) ?? null,
+          t: new Date().toISOString(),
+        });
+      }
+
+      const { data, error: profileError } = await this.supabase
         .from("profiles")
         .select("*")
         .eq("id", userId)
         .single();
 
+      if (process.env.NODE_ENV !== "production") {
+        console.log("[profile] fetchProfile result", {
+          ok: !profileError,
+          error: profileError?.message ?? null,
+          found: !!data,
+          t: new Date().toISOString(),
+        });
+      }
+
       if (profileError) {
-        console.error("Error fetching profile:", profileError);
-        setError(profileError.message);
-        setProfile(null);
+        console.error("[auth-manager] Error fetching profile:", profileError);
+        this.error = profileError.message;
+        this.currentProfile = null;
         return;
       }
 
-      setProfile(data);
-      setError(null);
+      this.currentProfile = data;
+      this.error = null;
     } catch (err) {
-      console.error("Error in fetchProfile:", err);
-      setError(err instanceof Error ? err.message : "Failed to fetch profile");
-      setProfile(null);
+      console.error("[auth-manager] Error in fetchProfile:", err);
+      this.error = err instanceof Error ? err.message : "Failed to fetch profile";
+      this.currentProfile = null;
     }
-  }, [supabase]);
+  }
 
-  /**
-   * Get initial session and set up auth state listener
-   * This runs on component mount to check if user is already logged in
-   */
-  useEffect(() => {
-    // Get initial session
-    const getInitialSession = async () => {
+  private notifyAll() {
+    this.callbacks.forEach((callback) => {
       try {
-        setLoading(true);
-        const {
-          data: { session },
-          error: sessionError,
-        } = await supabase.auth.getSession();
-
-        if (sessionError) {
-          console.error("Error getting session:", sessionError);
-          setError(sessionError.message);
-          setUser(null);
-          setProfile(null);
-          setLoading(false);
-          return;
-        }
-
-        if (session?.user) {
-          setUser(session.user);
-          // Fetch profile data for the authenticated user
-          await fetchProfile(session.user.id);
-        } else {
-          setUser(null);
-          setProfile(null);
-        }
+        callback(this.currentUser, this.currentProfile, this.isLoading, this.error);
       } catch (err) {
-        console.error("Error in getInitialSession:", err);
-        setError(err instanceof Error ? err.message : "Failed to get session");
-        setUser(null);
-        setProfile(null);
-      } finally {
-        setLoading(false);
+        console.error("[auth-manager] Error in callback:", err);
+      }
+    });
+  }
+
+  subscribe(callback: AuthStateCallback): () => void {
+    this.callbacks.add(callback);
+    // Immediately notify with current state
+    callback(this.currentUser, this.currentProfile, this.isLoading, this.error);
+
+    if (process.env.NODE_ENV !== "production") {
+      console.log("[auth-manager] callback subscribed, total callbacks:", this.callbacks.size);
+    }
+
+    // Return unsubscribe function
+    return () => {
+      this.callbacks.delete(callback);
+      if (process.env.NODE_ENV !== "production") {
+        console.log("[auth-manager] callback unsubscribed, total callbacks:", this.callbacks.size);
       }
     };
+  }
 
-    getInitialSession();
+  getSupabase() {
+    return this.supabase;
+  }
 
-    // Listen for auth state changes
-    // This fires when user logs in, logs out, or their session changes
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (event, session) => {
-      console.log("Auth state changed:", event);
+  async refreshProfile() {
+    if (this.currentUser) {
+      await this.fetchProfile(this.currentUser.id);
+      this.notifyAll();
+    }
+  }
+}
 
-      if (session?.user) {
-        setUser(session.user);
-        // Fetch profile when user logs in or session refreshes
-        await fetchProfile(session.user.id);
-      } else {
-        // User logged out or session expired
-        setUser(null);
-        setProfile(null);
+// Module-level singleton instance
+const authManager = new AuthManager();
+
+export function useAuth(): UseAuthReturn {
+  const [user, setUser] = useState<User | null>(null);
+  const [profile, setProfile] = useState<Profile | null>(null);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string | null>(null);
+  
+  // Use ref to track if component is mounted (cleanup-safe)
+  const isMountedRef = useRef(true);
+  const mountIdRef = useRef(Math.random().toString(36).slice(2, 7));
+
+  // Get supabase client from auth manager
+  const supabase = useMemo(() => authManager.getSupabase(), []);
+
+  // Subscribe to auth state changes
+  useEffect(() => {
+    isMountedRef.current = true;
+    const mountId = mountIdRef.current; // Capture for cleanup
+
+    if (process.env.NODE_ENV !== "production") {
+      console.log("[auth] hook mount", mountId);
+    }
+
+    // Subscribe to auth manager updates
+    const unsubscribe = authManager.subscribe((newUser, newProfile, newLoading, newError) => {
+      // Only update state if component is still mounted
+      if (isMountedRef.current) {
+        setUser(newUser);
+        setProfile(newProfile);
+        setLoading(newLoading);
+        setError(newError);
       }
-
-      setLoading(false);
     });
 
-    // Cleanup: unsubscribe when component unmounts
+    // Cleanup: unsubscribe and mark as unmounted
     return () => {
-      subscription.unsubscribe();
+      if (process.env.NODE_ENV !== "production") {
+        console.log("[auth] hook unmount", mountId);
+      }
+      isMountedRef.current = false;
+      unsubscribe();
     };
-  }, [supabase, fetchProfile]);
+  }, []);
 
   /**
    * Sign in with email and password
@@ -162,14 +285,14 @@ export function useAuth(): UseAuthReturn {
           return { error: signInError };
         }
 
-        // User will be set via onAuthStateChange listener
+        // User will be set via auth manager listener
         return { error: null };
       } catch (err) {
         const error = err instanceof Error ? err : new Error("Sign in failed");
         setError(error.message);
         return { error };
       } finally {
-        setLoading(false);
+        // Loading will be updated by auth manager
       }
     },
     [supabase]
@@ -195,7 +318,7 @@ export function useAuth(): UseAuthReturn {
           return { error: signUpError };
         }
 
-        // User will be set via onAuthStateChange listener
+        // User will be set via auth manager listener
         // Profile will be created automatically by the trigger
         return { error: null };
       } catch (err) {
@@ -203,7 +326,7 @@ export function useAuth(): UseAuthReturn {
         setError(error.message);
         return { error };
       } finally {
-        setLoading(false);
+        // Loading will be updated by auth manager
       }
     },
     [supabase]
@@ -224,14 +347,14 @@ export function useAuth(): UseAuthReturn {
         return { error: signOutError };
       }
 
-      // User and profile will be cleared via onAuthStateChange listener
+      // User and profile will be cleared via auth manager listener
       return { error: null };
     } catch (err) {
       const error = err instanceof Error ? err : new Error("Sign out failed");
       setError(error.message);
       return { error };
     } finally {
-      setLoading(false);
+      // Loading will be updated by auth manager
     }
   }, [supabase]);
 
@@ -265,7 +388,7 @@ export function useAuth(): UseAuthReturn {
       setError(error.message);
       return { error };
     } finally {
-      setLoading(false);
+      // Loading will be updated by auth manager
     }
   }, [supabase]);
 
@@ -273,10 +396,8 @@ export function useAuth(): UseAuthReturn {
    * Refresh profile data (useful after updating profile)
    */
   const refreshProfile = useCallback(async () => {
-    if (user?.id) {
-      await fetchProfile(user.id);
-    }
-  }, [user, fetchProfile]);
+    await authManager.refreshProfile();
+  }, []);
 
   return {
     user,
@@ -290,4 +411,3 @@ export function useAuth(): UseAuthReturn {
     refreshProfile,
   };
 }
-

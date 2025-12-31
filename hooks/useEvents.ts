@@ -72,10 +72,32 @@ export function useEvents(): UseEventsReturn {
     setError(null);
 
     try {
+      if (process.env.NODE_ENV !== "production") {
+        const { data: sessionData } = await supabase.auth.getSession();
+        console.log("[events] fetchEvents start", {
+          url: process.env.NEXT_PUBLIC_SUPABASE_URL,
+          hasSession: !!sessionData.session,
+          userId: sessionData.session?.user?.id ?? null,
+          tokenPrefix: sessionData.session?.access_token?.slice(0, 12) ?? null,
+          t: new Date().toISOString(),
+        });
+      }
+
+      // Note: Events table RLS policy allows public reads (SELECT using true)
+      // so events should be visible to both authenticated and anonymous users
       const { data, error: fetchError } = await supabase
         .from("events")
         .select("*")
         .order("start_datetime", { ascending: true });
+
+      if (process.env.NODE_ENV !== "production") {
+        console.log("[events] fetchEvents result", {
+          ok: !fetchError,
+          error: fetchError?.message ?? null,
+          count: data?.length ?? 0,
+          t: new Date().toISOString(),
+        });
+      }
 
       if (fetchError) {
         throw fetchError;
@@ -83,6 +105,9 @@ export function useEvents(): UseEventsReturn {
 
       setEvents(data || []);
     } catch (err) {
+      if (process.env.NODE_ENV !== "production") {
+        console.log("[events] fetchEvents catch", err);
+      }
       const errorMessage = err instanceof Error ? err.message : "Failed to fetch events";
       setError(errorMessage);
       console.error("Error fetching events:", err);
