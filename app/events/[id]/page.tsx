@@ -23,9 +23,13 @@ import {
   Trash2,
   Car,
   AlertCircle,
+  Clock,
+  Users,
+  Loader2,
 } from "lucide-react";
 import { useEvents } from "@/hooks/useEvents";
 import { useAuth } from "@/hooks/useAuth";
+import { useRides } from "@/hooks/useRides";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -61,6 +65,11 @@ export default function EventDetailPage() {
     fetchEvent,
     deleteEvent,
   } = useEvents();
+  const {
+    rides,
+    loading: ridesLoading,
+    fetchRidesByEvent,
+  } = useRides();
 
   const isAuthenticated = !!user;
   const isEventCreator = user && currentEvent?.created_by === user.id;
@@ -71,6 +80,13 @@ export default function EventDetailPage() {
       fetchEvent(eventId);
     }
   }, [eventId, fetchEvent]);
+
+  // Fetch rides for this event
+  useEffect(() => {
+    if (eventId) {
+      fetchRidesByEvent(eventId);
+    }
+  }, [eventId, fetchRidesByEvent]);
 
   /**
    * Handle event deletion
@@ -294,26 +310,93 @@ export default function EventDetailPage() {
           )}
         </div>
 
-        {/* TODO: Add rides list component when rides are implemented */}
-        <Card>
-          <CardContent className="py-12">
-            <div className="text-center">
-              <Car className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-              <h3 className="text-lg font-semibold mb-2">No rides yet</h3>
-              <p className="text-muted-foreground mb-4">
-                Be the first to create a ride to this event!
-              </p>
-              {isAuthenticated && isUpcoming && (
-                <Button asChild>
-                  <Link href={`/rides/new?eventId=${eventId}`}>
-                    <Car className="mr-2 h-4 w-4" />
-                    Create First Ride
-                  </Link>
-                </Button>
-              )}
-            </div>
-          </CardContent>
-        </Card>
+        {/* Rides List */}
+        {ridesLoading ? (
+          <Card>
+            <CardContent className="py-12">
+              <div className="text-center">
+                <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4 text-primary" />
+                <p className="text-muted-foreground">Loading rides...</p>
+              </div>
+            </CardContent>
+          </Card>
+        ) : rides.length === 0 ? (
+          <Card>
+            <CardContent className="py-12">
+              <div className="text-center">
+                <Car className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                <h3 className="text-lg font-semibold mb-2">No rides yet</h3>
+                <p className="text-muted-foreground mb-4">
+                  Be the first to create a ride to this event!
+                </p>
+                {isAuthenticated && isUpcoming && (
+                  <Button asChild>
+                    <Link href={`/rides/new?eventId=${eventId}`}>
+                      <Car className="mr-2 h-4 w-4" />
+                      Create First Ride
+                    </Link>
+                  </Button>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {rides.map((ride) => (
+              <Card
+                key={ride.id}
+                className="hover:shadow-lg transition-shadow cursor-pointer"
+                onClick={() => router.push(`/rides/${ride.id}`)}
+              >
+                <CardHeader>
+                  <div className="flex items-start justify-between gap-2 mb-2">
+                    <CardTitle className="text-lg line-clamp-2">
+                      Departure Details
+                    </CardTitle>
+                    <Badge variant={ride.status === "active" ? "default" : "secondary"}>
+                      {ride.status}
+                    </Badge>
+                  </div>
+                  <CardDescription className="flex items-center gap-2">
+                    <Clock className="h-4 w-4 flex-shrink-0" />
+                    <span>
+                      {format(new Date(ride.departure_datetime), "MMM d, yyyy 'at' h:mm a")}
+                    </span>
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  {/* Departure Location */}
+                  {ride.departure_address && (
+                    <div className="flex items-start gap-2">
+                      <MapPin className="h-4 w-4 text-muted-foreground flex-shrink-0 mt-0.5" />
+                      <p className="text-sm text-muted-foreground line-clamp-2">
+                        {ride.departure_address}
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Available Seats */}
+                  <div className="flex items-center gap-2 pt-2 border-t">
+                    <Users className="h-4 w-4 text-muted-foreground" />
+                    <p className="text-sm font-medium">
+                      {ride.available_seats.length} seat{ride.available_seats.length !== 1 ? "s" : ""} available
+                    </p>
+                  </div>
+
+                  {/* Pickup Mode */}
+                  <div className="flex items-center gap-2">
+                    <Car className="h-4 w-4 text-muted-foreground" />
+                    <p className="text-xs text-muted-foreground">
+                      {ride.pickup_mode === "meet_at_location"
+                        ? "Meet at departure location"
+                        : `Pickup within ${ride.pickup_radius_miles} miles`}
+                    </p>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Info for unauthenticated users */}

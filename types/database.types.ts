@@ -39,6 +39,53 @@ export type Database = {
   }
   public: {
     Tables: {
+      car_presets: {
+        Row: {
+          brand: string
+          color: string
+          created_at: string | null
+          default_available_seats: number[] | null
+          id: string
+          license_plate: string
+          model: string
+          name: string | null
+          updated_at: string | null
+          user_id: string
+        }
+        Insert: {
+          brand: string
+          color: string
+          created_at?: string | null
+          default_available_seats?: number[] | null
+          id?: string
+          license_plate: string
+          model: string
+          name?: string | null
+          updated_at?: string | null
+          user_id: string
+        }
+        Update: {
+          brand?: string
+          color?: string
+          created_at?: string | null
+          default_available_seats?: number[] | null
+          id?: string
+          license_plate?: string
+          model?: string
+          name?: string | null
+          updated_at?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "car_presets_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       events: {
         Row: {
           address: string
@@ -139,6 +186,148 @@ export type Database = {
           updated_at?: string | null
         }
         Relationships: []
+      }
+      ride_reservations: {
+        Row: {
+          cost_per_person: number | null
+          created_at: string | null
+          id: string
+          payment_status: string | null
+          ride_id: string
+          rider_id: string
+          seat_number: number
+          status: string
+          stripe_payment_intent_id: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          cost_per_person?: number | null
+          created_at?: string | null
+          id?: string
+          payment_status?: string | null
+          ride_id: string
+          rider_id: string
+          seat_number: number
+          status?: string
+          stripe_payment_intent_id?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          cost_per_person?: number | null
+          created_at?: string | null
+          id?: string
+          payment_status?: string | null
+          ride_id?: string
+          rider_id?: string
+          seat_number?: number
+          status?: string
+          stripe_payment_intent_id?: string | null
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ride_reservations_ride_id_fkey"
+            columns: ["ride_id"]
+            isOneToOne: false
+            referencedRelation: "rides"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ride_reservations_rider_id_fkey"
+            columns: ["rider_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      rides: {
+        Row: {
+          available_seats: number[]
+          car_preset_id: string
+          created_at: string | null
+          departure_address: string
+          departure_datetime: string
+          departure_datetime_end: string | null
+          departure_latitude: number | null
+          departure_longitude: number | null
+          driver_id: string
+          event_id: string
+          id: string
+          is_free: boolean | null
+          is_time_range: boolean | null
+          pickup_mode: string
+          pickup_radius_miles: number | null
+          started_at: string | null
+          status: string
+          total_expected_cost: number | null
+          updated_at: string | null
+        }
+        Insert: {
+          available_seats: number[]
+          car_preset_id: string
+          created_at?: string | null
+          departure_address: string
+          departure_datetime: string
+          departure_datetime_end?: string | null
+          departure_latitude?: number | null
+          departure_longitude?: number | null
+          driver_id: string
+          event_id: string
+          id?: string
+          is_free?: boolean | null
+          is_time_range?: boolean | null
+          pickup_mode?: string
+          pickup_radius_miles?: number | null
+          started_at?: string | null
+          status?: string
+          total_expected_cost?: number | null
+          updated_at?: string | null
+        }
+        Update: {
+          available_seats?: number[]
+          car_preset_id?: string
+          created_at?: string | null
+          departure_address?: string
+          departure_datetime?: string
+          departure_datetime_end?: string | null
+          departure_latitude?: number | null
+          departure_longitude?: number | null
+          driver_id?: string
+          event_id?: string
+          id?: string
+          is_free?: boolean | null
+          is_time_range?: boolean | null
+          pickup_mode?: string
+          pickup_radius_miles?: number | null
+          started_at?: string | null
+          status?: string
+          total_expected_cost?: number | null
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "rides_car_preset_id_fkey"
+            columns: ["car_preset_id"]
+            isOneToOne: false
+            referencedRelation: "car_presets"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "rides_driver_id_fkey"
+            columns: ["driver_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "rides_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
+            referencedRelation: "events"
+            referencedColumns: ["id"]
+          },
+        ]
       }
     }
     Views: {
