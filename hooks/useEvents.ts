@@ -14,7 +14,7 @@
  * Uses the Supabase client for all database operations.
  */
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
 import type { Database } from "@/types/database.types";
 
@@ -60,7 +60,8 @@ export function useEvents(): UseEventsReturn {
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
-  const supabase = createClient();
+  // Use singleton Supabase client - memoized to ensure stable reference
+  const supabase = useMemo(() => createClient(), []);
 
   /**
    * Fetch all events from the database

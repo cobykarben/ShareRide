@@ -54,10 +54,13 @@ export default function EventsPage() {
   const [dateFilter, setDateFilter] = useState<DateFilter>("all");
   const [isSearching, setIsSearching] = useState(false);
 
-  // Fetch events on mount
+  // Fetch events on mount - wait for auth to settle to ensure session is ready
+  // This prevents race conditions where fetch runs before auth session is initialized
   useEffect(() => {
-    fetchEvents();
-  }, [fetchEvents]);
+    if (!authLoading) {
+      void fetchEvents();
+    }
+  }, [authLoading, fetchEvents]); // Re-fetch when auth loading completes (ensures session is ready)
 
   /**
    * Handle search input change

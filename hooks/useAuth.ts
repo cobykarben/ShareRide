@@ -10,7 +10,7 @@
  * All users have the same profile structure and can both drive and ride (as long as they meet prerequisites).
  */
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { User } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/client";
 import type { Database } from "@/types/database.types";
@@ -43,7 +43,8 @@ export function useAuth(): UseAuthReturn {
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
-  const supabase = createClient();
+  // Use singleton Supabase client - memoized to ensure stable reference
+  const supabase = useMemo(() => createClient(), []);
 
   /**
    * Fetch profile data for the current user
