@@ -382,9 +382,6 @@ export default function RideDetailPage() {
                 </Avatar>
                 <div>
                   <p className="font-medium">{getDriverName(driverProfile)}</p>
-                  {driverProfile.bio && (
-                    <p className="text-sm text-muted-foreground">{driverProfile.bio}</p>
-                  )}
                 </div>
               </div>
             ) : (
