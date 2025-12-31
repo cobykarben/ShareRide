@@ -71,11 +71,11 @@ const rideFormSchema = z.object({
     .max(500, "Address must be less than 500 characters"),
   departure_datetime: z.string().min(1, "Departure time is required"),
   departure_datetime_end: z.string().optional(),
-  is_time_range: z.boolean().default(false),
-  pickup_mode: z.enum(["meet_at_location", "pickup_within_radius"]).default("meet_at_location"),
+  is_time_range: z.boolean(),
+  pickup_mode: z.enum(["meet_at_location", "pickup_within_radius"]),
   pickup_radius_miles: z.number().min(0.5).max(50).optional(),
   available_seats: z.array(z.number().int().positive()).min(1, "At least one seat must be available"),
-  is_free: z.boolean().default(true),
+  is_free: z.boolean(),
 }).refine(
   (data) => {
     // If time range is selected, departure_datetime_end is required
