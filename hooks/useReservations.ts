@@ -73,8 +73,10 @@ export function useReservations(): UseReservationsReturn {
 
       try {
         // Fetch reservations with rider profile information
-        // RLS policy allows drivers to see reservations for their rides
-        // and allows riders to see their own reservations
+        // RLS policies allow:
+        // - Drivers to see all reservations for their rides
+        // - Riders to see their own reservations
+        // - Anyone to see confirmed reservations for active rides (to see which seats are taken)
         const { data, error: fetchError } = await supabase
           .from("ride_reservations")
           .select(
@@ -195,45 +197,77 @@ export function useReservations(): UseReservationsReturn {
 
         // Step 6: Create the reservation
         // For Stage 1, all rides are free, so no payment processing needed
-        // cost_per_person, stripe_payment_intent_id, and payment_status are all NULL/optional
-        const reservationData: Omit<RideReservationInsert, "rider_id" | "status"> = {
-          ride_id: rideId,
-          seat_number: seatNumber,
-          // For Stage 1 (free rides), these are NULL
-          cost_per_person: null,
-          stripe_payment_intent_id: null,
-          payment_status: null,
-        };
-
+        // cost_per_person, stripe_payment_intent_id are NULL
+        // payment_status can be NULL for free rides (the DEFAULT 'pending' is for paid rides)
         const { data: newReservation, error: createError } = await supabase
           .from("ride_reservations")
           .insert({
-            ...reservationData,
+            ride_id: rideId,
             rider_id: user.id,
+            seat_number: seatNumber,
             status: "confirmed", // Default status
+            // For Stage 1 (free rides), payment fields are NULL
+            cost_per_person: null,
+            stripe_payment_intent_id: null,
+            payment_status: null, // NULL for free rides
           })
           .select()
           .single();
 
         if (createError) {
+          // Log full error details for debugging
+          console.error("[reservations] Create error details:", {
+            code: createError.code,
+            message: createError.message,
+            details: createError.details,
+            hint: createError.hint,
+            error: createError,
+          });
+
           // Handle unique constraint violations
           if (createError.code === "23505") {
-            if (createError.message.includes("ride_id, seat_number")) {
+            if (createError.message?.includes("ride_id, seat_number") || 
+                createError.details?.includes("seat_number")) {
               throw new Error(`Seat ${seatNumber} is already reserved`);
-            } else if (createError.message.includes("ride_id, rider_id")) {
+            } else if (createError.message?.includes("ride_id, rider_id") ||
+                       createError.details?.includes("rider_id")) {
               throw new Error("You already have a reservation on this ride");
             }
           }
-          throw createError;
+
+          // Handle RLS policy violations
+          if (createError.code === "42501" || createError.message?.includes("row-level security")) {
+            throw new Error("You don't have permission to create this reservation. Please make sure you're logged in and meet all prerequisites.");
+          }
+
+          // Create a more descriptive error message
+          const errorMessage = createError.message || 
+                               createError.details || 
+                               createError.hint ||
+                               "Failed to create reservation";
+          throw new Error(errorMessage);
         }
 
         setLoading(false);
         return { data: newReservation, error: null };
       } catch (err) {
+        // Enhanced error logging
+        console.error("[reservations] Error creating reservation:", {
+          error: err,
+          errorType: typeof err,
+          errorMessage: err instanceof Error ? err.message : String(err),
+          errorStack: err instanceof Error ? err.stack : undefined,
+          errorString: JSON.stringify(err, Object.getOwnPropertyNames(err)),
+        });
+
         const errorMessage =
-          err instanceof Error ? err.message : "Failed to create reservation";
+          err instanceof Error 
+            ? err.message 
+            : typeof err === "string"
+            ? err
+            : "Failed to create reservation";
+        
         setError(errorMessage);
-        console.error("Error creating reservation:", err);
         setLoading(false);
         return { data: null, error: err instanceof Error ? err : new Error(errorMessage) };
       }

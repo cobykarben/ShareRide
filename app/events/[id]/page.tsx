@@ -10,7 +10,7 @@
  * - Ability to edit/delete event (if user is the creator)
  */
 
-import { useEffect } from "react";
+import { useEffect, useState, useMemo } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { format, formatDistanceToNow } from "date-fns";
@@ -26,10 +26,14 @@ import {
   Clock,
   Users,
   Loader2,
+  Gauge,
+  User,
 } from "lucide-react";
 import { useEvents } from "@/hooks/useEvents";
 import { useAuth } from "@/hooks/useAuth";
 import { useRides } from "@/hooks/useRides";
+import { createClient } from "@/lib/supabase/client";
+import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -70,9 +74,115 @@ export default function EventDetailPage() {
     loading: ridesLoading,
     fetchRidesByEvent,
   } = useRides();
+  
+  // Track reservations for each ride to calculate available seats
+  const [rideReservations, setRideReservations] = useState<Record<string, number>>({});
+  
+  // Track user's role for each ride (driver, rider, or none)
+  const [userRideRoles, setUserRideRoles] = useState<Record<string, "driver" | "rider" | null>>({});
 
   const isAuthenticated = !!user;
   const isEventCreator = user && currentEvent?.created_by === user.id;
+
+  // Fetch reservations and determine user's role for each ride
+  useEffect(() => {
+    const fetchAllReservationsAndRoles = async () => {
+      if (rides.length === 0) {
+        setRideReservations({});
+        setUserRideRoles({});
+        return;
+      }
+
+      if (!user) {
+        // No user logged in, just fetch reservation counts
+        const supabase = createClient();
+        const reservationsMap: Record<string, number> = {};
+        
+        await Promise.all(
+          rides.map(async (ride) => {
+            try {
+              const { data, error } = await supabase
+                .from("ride_reservations")
+                .select("id")
+                .eq("ride_id", ride.id)
+                .eq("status", "confirmed");
+
+              if (!error && data) {
+                reservationsMap[ride.id] = data.length;
+              } else {
+                reservationsMap[ride.id] = 0;
+              }
+            } catch (err) {
+              console.error(`Error fetching reservations for ride ${ride.id}:`, err);
+              reservationsMap[ride.id] = 0;
+            }
+          })
+        );
+
+        setRideReservations(reservationsMap);
+        setUserRideRoles({});
+        return;
+      }
+
+      const supabase = createClient();
+      const reservationsMap: Record<string, number> = {};
+      const rolesMap: Record<string, "driver" | "rider" | null> = {};
+
+      // Fetch reservations and check user's role for each ride
+      await Promise.all(
+        rides.map(async (ride) => {
+          try {
+            // Check if user is driver
+            const isDriver = ride.driver_id === user.id;
+
+            // Fetch reservations to count them and check if user is a rider
+            const { data: reservations, error } = await supabase
+              .from("ride_reservations")
+              .select("rider_id, status")
+              .eq("ride_id", ride.id);
+
+            if (!error && reservations) {
+              const confirmedReservations = reservations.filter((r) => r.status === "confirmed");
+              reservationsMap[ride.id] = confirmedReservations.length;
+
+              // Check if user is a rider
+              const isRider = confirmedReservations.some((r) => r.rider_id === user.id);
+
+              // Determine role (driver takes priority)
+              if (isDriver) {
+                rolesMap[ride.id] = "driver";
+              } else if (isRider) {
+                rolesMap[ride.id] = "rider";
+              } else {
+                rolesMap[ride.id] = null;
+              }
+            } else {
+              reservationsMap[ride.id] = 0;
+              rolesMap[ride.id] = isDriver ? "driver" : null;
+            }
+          } catch (err) {
+            console.error(`Error fetching data for ride ${ride.id}:`, err);
+            reservationsMap[ride.id] = 0;
+            rolesMap[ride.id] = ride.driver_id === user.id ? "driver" : null;
+          }
+        })
+      );
+
+      setRideReservations(reservationsMap);
+      setUserRideRoles(rolesMap);
+    };
+
+    fetchAllReservationsAndRoles();
+  }, [rides, user]);
+
+  /**
+   * Calculate available seats for a ride
+   */
+  const getAvailableSeatCount = (ride: typeof rides[0]) => {
+    const reservedCount = rideReservations[ride.id] || 0;
+    const totalSeats = ride.available_seats?.length || 0;
+    return Math.max(0, totalSeats - reservedCount);
+  };
 
   // Fetch event on mount
   useEffect(() => {
@@ -342,59 +452,99 @@ export default function EventDetailPage() {
           </Card>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {rides.map((ride) => (
-              <Card
-                key={ride.id}
-                className="hover:shadow-lg transition-shadow cursor-pointer"
-                onClick={() => router.push(`/rides/${ride.id}`)}
-              >
-                <CardHeader>
-                  <div className="flex items-start justify-between gap-2 mb-2">
-                    <CardTitle className="text-lg line-clamp-2">
-                      Departure Details
-                    </CardTitle>
-                    <Badge variant={ride.status === "active" ? "default" : "secondary"}>
-                      {ride.status}
-                    </Badge>
-                  </div>
-                  <CardDescription className="flex items-center gap-2">
-                    <Clock className="h-4 w-4 flex-shrink-0" />
-                    <span>
-                      {format(new Date(ride.departure_datetime), "MMM d, yyyy 'at' h:mm a")}
-                    </span>
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-3">
-                  {/* Departure Location */}
-                  {ride.departure_address && (
-                    <div className="flex items-start gap-2">
-                      <MapPin className="h-4 w-4 text-muted-foreground flex-shrink-0 mt-0.5" />
-                      <p className="text-sm text-muted-foreground line-clamp-2">
-                        {ride.departure_address}
+            {rides.map((ride) => {
+              const userRole = userRideRoles[ride.id] || null;
+              
+              return (
+                <Card
+                  key={ride.id}
+                  className="hover:shadow-lg transition-shadow cursor-pointer"
+                  onClick={() => router.push(`/rides/${ride.id}`)}
+                >
+                  <CardHeader>
+                    <div className="flex items-start justify-between gap-2 mb-2">
+                      <div className="flex items-center gap-2 flex-1 min-w-0">
+                        {/* Role Icon */}
+                        {userRole === "driver" && (
+                          <Gauge className="h-5 w-5 text-primary flex-shrink-0" />
+                        )}
+                        {userRole === "rider" && (
+                          <User className="h-5 w-5 text-blue-500 flex-shrink-0" />
+                        )}
+                        <CardTitle className="text-lg line-clamp-2 flex-1">
+                          Departure Details
+                        </CardTitle>
+                      </div>
+                      <Badge variant={ride.status === "active" ? "default" : "secondary"}>
+                        {ride.status}
+                      </Badge>
+                    </div>
+                    
+                    {/* Role Badge */}
+                    {userRole && (
+                      <div className="mb-2">
+                        <Badge 
+                          variant="outline"
+                          className={cn(
+                            userRole === "driver"
+                              ? "bg-primary/10 text-primary border-primary/20"
+                              : "bg-blue-500/10 text-blue-600 border-blue-500/20 dark:text-blue-400"
+                          )}
+                        >
+                          {userRole === "driver" ? (
+                            <>
+                              <Gauge className="h-3 w-3 mr-1" />
+                              Driver
+                            </>
+                          ) : (
+                            <>
+                              <User className="h-3 w-3 mr-1" />
+                              Passenger
+                            </>
+                          )}
+                        </Badge>
+                      </div>
+                    )}
+                    
+                    <CardDescription className="flex items-center gap-2">
+                      <Clock className="h-4 w-4 flex-shrink-0" />
+                      <span>
+                        {format(new Date(ride.departure_datetime), "MMM d, yyyy 'at' h:mm a")}
+                      </span>
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    {/* Departure Location */}
+                    {ride.departure_address && (
+                      <div className="flex items-start gap-2">
+                        <MapPin className="h-4 w-4 text-muted-foreground flex-shrink-0 mt-0.5" />
+                        <p className="text-sm text-muted-foreground line-clamp-2">
+                          {ride.departure_address}
+                        </p>
+                      </div>
+                    )}
+
+                    {/* Available Seats */}
+                    <div className="flex items-center gap-2 pt-2 border-t">
+                      <Users className="h-4 w-4 text-muted-foreground" />
+                      <p className="text-sm font-medium">
+                        {getAvailableSeatCount(ride)} seat{getAvailableSeatCount(ride) !== 1 ? "s" : ""} available
                       </p>
                     </div>
-                  )}
 
-                  {/* Available Seats */}
-                  <div className="flex items-center gap-2 pt-2 border-t">
-                    <Users className="h-4 w-4 text-muted-foreground" />
-                    <p className="text-sm font-medium">
-                      {ride.available_seats.length} seat{ride.available_seats.length !== 1 ? "s" : ""} available
-                    </p>
-                  </div>
-
-                  {/* Pickup Mode */}
-                  <div className="flex items-center gap-2">
-                    <Car className="h-4 w-4 text-muted-foreground" />
-                    <p className="text-xs text-muted-foreground">
-                      {ride.pickup_mode === "meet_at_location"
-                        ? "Meet at departure location"
-                        : `Pickup within ${ride.pickup_radius_miles} miles`}
-                    </p>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
+                    {/* Pickup Mode */}
+                    <div className="flex items-center gap-2">
+                      <Car className="h-4 w-4 text-muted-foreground" />
+                      <p className="text-xs text-muted-foreground">
+                        {ride.pickup_mode === "meet_at_location"
+                          ? "Meet at departure location"
+                          : `Pickup within ${ride.pickup_radius_miles} miles`}
+                      </p>
+                    </div>
+                  </CardContent>
+                </Card>
+              );
+            })}
           </div>
         )}
       </div>

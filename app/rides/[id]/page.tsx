@@ -58,8 +58,10 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { SeatList } from "@/components/SeatList";
+import { ReserveSeatButton } from "@/components/ReserveSeatButton";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { toast } from "sonner";
+import { useReservations } from "@/hooks/useReservations";
 import type { Database } from "@/types/database.types";
 
 type Profile = Database["public"]["Tables"]["profiles"]["Row"];
@@ -73,6 +75,7 @@ export default function RideDetailPage() {
   const { currentRide, loading, error, fetchRide, cancelRide } = useRides();
   const { currentEvent, fetchEvent } = useEvents();
   const { currentCarPreset, fetchCarPreset } = useCarPresets();
+  const { reservations, fetchReservationsForRide } = useReservations();
   const [driverProfile, setDriverProfile] = useState<Profile | null>(null);
   const [loadingDriver, setLoadingDriver] = useState(false);
 
@@ -80,8 +83,16 @@ export default function RideDetailPage() {
   useEffect(() => {
     if (rideId) {
       fetchRide(rideId);
+      fetchReservationsForRide(rideId);
     }
-  }, [rideId, fetchRide]);
+  }, [rideId, fetchRide, fetchReservationsForRide]);
+
+  // Refresh reservations when ride changes
+  useEffect(() => {
+    if (currentRide?.id) {
+      fetchReservationsForRide(currentRide.id);
+    }
+  }, [currentRide?.id, fetchReservationsForRide]);
 
   // Fetch event when ride is loaded
   useEffect(() => {
@@ -161,7 +172,18 @@ export default function RideDetailPage() {
 
   const isAuthenticated = !!user;
   const isDriver = user && currentRide?.driver_id === user.id;
-  const isRider = currentRide?.reservations?.some((r) => r.rider_id === user?.id);
+  const isRider = reservations.some((r) => r.rider_id === user?.id) || 
+                  currentRide?.reservations?.some((r) => r.rider_id === user?.id);
+
+  /**
+   * Handle reservation created - refresh ride and reservations
+   */
+  const handleReservationCreated = async () => {
+    if (rideId) {
+      await fetchRide(rideId);
+      await fetchReservationsForRide(rideId);
+    }
+  };
 
   /**
    * Handle ride cancellation
@@ -198,11 +220,19 @@ export default function RideDetailPage() {
 
   /**
    * Get available seat count
+   * Uses the reservations from useReservations hook for accurate count
    */
   const getAvailableSeatCount = () => {
     if (!currentRide) return 0;
-    const occupiedSeats = currentRide.reservations?.length || 0;
-    return currentRide.available_seats.length - occupiedSeats;
+    
+    // Use reservations from hook (more accurate, includes all confirmed reservations)
+    // Fall back to currentRide.reservations if hook hasn't loaded yet
+    const confirmedReservations = reservations.length > 0 
+      ? reservations 
+      : currentRide.reservations?.filter(r => r.status === 'confirmed') || [];
+    
+    const occupiedSeats = confirmedReservations.length;
+    return Math.max(0, currentRide.available_seats.length - occupiedSeats);
   };
 
   /**
@@ -426,6 +456,12 @@ export default function RideDetailPage() {
                 <MapPin className="h-5 w-5 text-muted-foreground flex-shrink-0 mt-0.5" />
                 <p className="text-muted-foreground">{currentRide.departure_address}</p>
               </div>
+              <div className="flex items-center gap-3">
+                <User className="h-5 w-5 text-muted-foreground flex-shrink-0" />
+                <p className="text-muted-foreground">
+                  <span className="font-medium">{availableSeatCount}</span> seat{availableSeatCount !== 1 ? "s" : ""} available
+                </p>
+              </div>
               <div className="flex items-center gap-2 mt-2">
                 <Badge variant="outline">
                   {currentRide.pickup_mode === "meet_at_location"
@@ -446,49 +482,37 @@ export default function RideDetailPage() {
             </div>
             <SeatList
               availableSeats={currentRide.available_seats}
-              reservations={currentRide.reservations?.map((r) => ({
-                ...r,
-                rider: undefined, // TODO: Fetch rider profiles for reservations
-              }))}
+              reservations={reservations.length > 0 
+                ? reservations.map((r) => ({
+                    ...r,
+                    rider: r.rider || undefined,
+                  }))
+                : currentRide.reservations?.map((r) => ({
+                    ...r,
+                    rider: undefined,
+                  })) || []}
             />
           </div>
         </CardContent>
       </Card>
 
-      {/* Action Buttons */}
-      {isAuthenticated && isActive && (
+      {/* Action Buttons - Reservation */}
+      {isAuthenticated && isActive && !isDriver && (
         <Card>
           <CardContent className="pt-6">
-            {isDriver ? (
-              <div className="text-center text-muted-foreground">
-                <p>You are the driver of this ride.</p>
-                <p className="text-sm mt-1">Use the buttons above to edit or cancel the ride.</p>
-              </div>
-            ) : isRider ? (
+            {isRider ? (
               <div className="text-center text-muted-foreground">
                 <p>You have a reservation for this ride.</p>
                 <p className="text-sm mt-1">Visit "My Rides" to manage your reservation.</p>
               </div>
-            ) : availableSeatCount > 0 ? (
-              <div className="text-center">
-                <Button
-                  onClick={() => {
-                    // TODO: Navigate to reservation/booking flow
-                    toast.info("Reservation feature coming soon!");
-                  }}
-                  className="w-full sm:w-auto"
-                >
-                  Reserve Seat
-                </Button>
-                <p className="text-sm text-muted-foreground mt-2">
-                  {availableSeatCount} seat{availableSeatCount !== 1 ? "s" : ""} available
-                </p>
-              </div>
-            ) : (
-              <div className="text-center text-muted-foreground">
-                <p>All seats are currently reserved.</p>
-              </div>
-            )}
+            ) : currentRide ? (
+              <ReserveSeatButton
+                ride={currentRide}
+                reservations={reservations.length > 0 ? reservations : currentRide.reservations || []}
+                onReservationCreated={handleReservationCreated}
+                isDriver={false}
+              />
+            ) : null}
           </CardContent>
         </Card>
       )}

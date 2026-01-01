@@ -30,6 +30,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   Form,
   FormControl,
   FormDescription,
@@ -42,11 +49,14 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Loader2 } from "lucide-react";
 import type { Database } from "@/types/database.types";
 import {
-  VEHICLE_TYPE_SEATS,
-  getDefaultSeatsForVehicleType,
   formatSeatsForDisplay,
   validateSeatConfiguration,
 } from "@/lib/utils/seatConfig";
+import {
+  getAllBrands,
+  getModelsForBrand,
+  getAvailableSeatsForModel,
+} from "@/lib/utils/carData";
 
 type CarPreset = Database["public"]["Tables"]["car_presets"]["Row"];
 
@@ -82,10 +92,9 @@ interface CarPresetFormProps {
   onCancel?: () => void;
 }
 
-// Common seat numbers (most cars have seats 2-8, with seat 1 being the driver)
-// For Stage 1, we use checkboxes for simplicity
-// Visual seat maps will be added in Stage 2
-const AVAILABLE_SEAT_NUMBERS = [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
+// Note: Seat numbers are now dynamically determined based on the selected car model
+// Seat 1 is always the driver's seat
+// Available seats will be generated based on the model's default_seats value
 
 export function CarPresetForm({ initialValues, onSuccess, onCancel }: CarPresetFormProps) {
   const router = useRouter();
@@ -93,6 +102,12 @@ export function CarPresetForm({ initialValues, onSuccess, onCancel }: CarPresetF
   const isEditMode = !!initialValues;
   const [selectedSeats, setSelectedSeats] = useState<number[]>(
     initialValues?.default_available_seats || []
+  );
+  const [selectedBrand, setSelectedBrand] = useState<string>(
+    initialValues?.brand || ""
+  );
+  const [selectedModel, setSelectedModel] = useState<string>(
+    initialValues?.model || ""
   );
 
   // Initialize form
@@ -120,8 +135,22 @@ export function CarPresetForm({ initialValues, onSuccess, onCancel }: CarPresetF
         default_available_seats: initialValues.default_available_seats || [],
       });
       setSelectedSeats(initialValues.default_available_seats || []);
+      setSelectedBrand(initialValues.brand || "");
+      setSelectedModel(initialValues.model || "");
     }
   }, [initialValues, form]);
+
+  // Auto-set seats when model is selected
+  useEffect(() => {
+    if (selectedBrand && selectedModel && !isEditMode) {
+      // Only auto-set seats when creating new preset (not editing)
+      const availableSeats = getAvailableSeatsForModel(selectedBrand, selectedModel);
+      if (availableSeats.length > 0) {
+        setSelectedSeats(availableSeats);
+        form.setValue("default_available_seats", availableSeats);
+      }
+    }
+  }, [selectedBrand, selectedModel, isEditMode, form]);
 
   /**
    * Handle seat checkbox changes
@@ -142,26 +171,6 @@ export function CarPresetForm({ initialValues, onSuccess, onCancel }: CarPresetF
     form.setValue("default_available_seats", newSeats.length > 0 ? newSeats : undefined);
   };
 
-  /**
-   * Quick-select seats for common vehicle types
-   */
-  const handleQuickSelect = (vehicleType: keyof typeof VEHICLE_TYPE_SEATS) => {
-    const defaultSeats = getDefaultSeatsForVehicleType(vehicleType);
-    // Filter to only show seats that are in our available range
-    const filteredSeats = defaultSeats.filter((seat) =>
-      AVAILABLE_SEAT_NUMBERS.includes(seat)
-    );
-    
-    // Validate before setting
-    const validation = validateSeatConfiguration(filteredSeats);
-    if (!validation.isValid && validation.error) {
-      toast.error(validation.error);
-      return;
-    }
-
-    setSelectedSeats(filteredSeats);
-    form.setValue("default_available_seats", filteredSeats.length > 0 ? filteredSeats : undefined);
-  };
 
   /**
    * Handle form submission
@@ -246,15 +255,36 @@ export function CarPresetForm({ initialValues, onSuccess, onCancel }: CarPresetF
                   <FormLabel>
                     Brand <span className="text-destructive">*</span>
                   </FormLabel>
-                  <FormControl>
-                    <Input
-                      placeholder="e.g., Toyota, Ford, Tesla"
-                      disabled={isSubmitting}
-                      {...field}
-                    />
-                  </FormControl>
+                  <Select
+                    disabled={isSubmitting}
+                    onValueChange={(value) => {
+                      field.onChange(value);
+                      setSelectedBrand(value);
+                      // Clear model when brand changes (unless in edit mode and brand hasn't actually changed)
+                      if (value !== initialValues?.brand) {
+                        form.setValue("model", "");
+                        setSelectedModel("");
+                        setSelectedSeats([]);
+                        form.setValue("default_available_seats", undefined);
+                      }
+                    }}
+                    value={field.value}
+                  >
+                    <FormControl>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select a brand" />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      {getAllBrands().map((brand) => (
+                        <SelectItem key={brand} value={brand}>
+                          {brand}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                   <FormDescription>
-                    The vehicle manufacturer (e.g., Toyota, Ford, Honda).
+                    Select the vehicle manufacturer from the list.
                   </FormDescription>
                   <FormMessage />
                 </FormItem>
@@ -265,24 +295,68 @@ export function CarPresetForm({ initialValues, onSuccess, onCancel }: CarPresetF
             <FormField
               control={form.control}
               name="model"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>
-                    Model <span className="text-destructive">*</span>
-                  </FormLabel>
-                  <FormControl>
-                    <Input
-                      placeholder="e.g., Camry, F-150, Model 3"
-                      disabled={isSubmitting}
-                      {...field}
-                    />
-                  </FormControl>
-                  <FormDescription>
-                    The vehicle model name (e.g., Camry, F-150, Model 3).
-                  </FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )}
+              render={({ field }) => {
+                const availableModels = selectedBrand
+                  ? getModelsForBrand(selectedBrand)
+                  : [];
+                
+                return (
+                  <FormItem>
+                    <FormLabel>
+                      Model <span className="text-destructive">*</span>
+                    </FormLabel>
+                    <Select
+                      disabled={isSubmitting || !selectedBrand}
+                      onValueChange={(value) => {
+                        field.onChange(value);
+                        setSelectedModel(value);
+                        // Auto-set seats when model is selected (only for new presets)
+                        if (!isEditMode) {
+                          const availableSeats = getAvailableSeatsForModel(selectedBrand, value);
+                          if (availableSeats.length > 0) {
+                            setSelectedSeats(availableSeats);
+                            form.setValue("default_available_seats", availableSeats);
+                          }
+                        }
+                      }}
+                      value={field.value}
+                    >
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue 
+                            placeholder={
+                              selectedBrand 
+                                ? "Select a model" 
+                                : "Select a brand first"
+                            }
+                          />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        {availableModels.length > 0 ? (
+                          availableModels.map((model) => (
+                            <SelectItem key={model} value={model}>
+                              {model}
+                            </SelectItem>
+                          ))
+                        ) : (
+                          <SelectItem value="none" disabled>
+                            {selectedBrand 
+                              ? "No models available" 
+                              : "Select a brand first"}
+                          </SelectItem>
+                        )}
+                      </SelectContent>
+                    </Select>
+                    <FormDescription>
+                      {selectedBrand
+                        ? `Select the ${selectedBrand} model from the list.`
+                        : "Select a brand first to see available models."}
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                );
+              }}
             />
 
             {/* Color */}
@@ -364,73 +438,48 @@ export function CarPresetForm({ initialValues, onSuccess, onCancel }: CarPresetF
             <div className="space-y-3">
               <FormLabel>Default Available Seats (Optional)</FormLabel>
               <FormDescription>
-                Select which seats are typically available for passengers by default.
-                Seat 1 is usually the driver's seat. You can override this when creating a ride.
+                {selectedBrand && selectedModel
+                  ? `Select which seats are available for passengers. All seats for your ${selectedBrand} ${selectedModel} are pre-selected, but you can uncheck any seats that aren't typically available. Seat 1 is the driver's seat. You can override this when creating a ride.`
+                  : "Select your car brand and model first to see available seats. You can uncheck any seats that aren't typically available. Seat 1 is the driver's seat. You can override this when creating a ride."}
               </FormDescription>
-              
-              {/* Quick Select Buttons */}
-              <div className="flex flex-wrap gap-2 pt-2">
-                <span className="text-sm text-muted-foreground self-center mr-2">Quick select:</span>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => handleQuickSelect("sedan")}
-                  disabled={isSubmitting}
-                >
-                  Sedan (4-5 seats)
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => handleQuickSelect("suv")}
-                  disabled={isSubmitting}
-                >
-                  SUV (7-8 seats)
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => handleQuickSelect("van")}
-                  disabled={isSubmitting}
-                >
-                  Van (8-15 seats)
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => handleQuickSelect("truck")}
-                  disabled={isSubmitting}
-                >
-                  Truck (2-3 seats)
-                </Button>
-              </div>
 
-              {/* Manual Seat Selection */}
-              <div className="space-y-2 pt-2">
-                <p className="text-sm font-medium">Or select manually:</p>
-                <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-5 gap-3">
-                  {AVAILABLE_SEAT_NUMBERS.map((seatNumber) => (
-                    <div key={seatNumber} className="flex items-center space-x-2">
-                      <Checkbox
-                        id={`seat-${seatNumber}`}
-                        checked={selectedSeats.includes(seatNumber)}
-                        onCheckedChange={() => handleSeatToggle(seatNumber)}
-                        disabled={isSubmitting}
-                      />
-                      <label
-                        htmlFor={`seat-${seatNumber}`}
-                        className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
-                      >
-                        Seat {seatNumber}
-                      </label>
+              {/* Seat Selection */}
+              {selectedBrand && selectedModel ? (
+                (() => {
+                  const availableSeatsForModel = getAvailableSeatsForModel(selectedBrand, selectedModel);
+                  return availableSeatsForModel.length > 0 ? (
+                    <div className="space-y-2 pt-2">
+                      <p className="text-sm font-medium">Select available seats:</p>
+                      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-5 gap-3">
+                        {availableSeatsForModel.map((seatNumber) => (
+                          <div key={seatNumber} className="flex items-center space-x-2">
+                            <Checkbox
+                              id={`seat-${seatNumber}`}
+                              checked={selectedSeats.includes(seatNumber)}
+                              onCheckedChange={() => handleSeatToggle(seatNumber)}
+                              disabled={isSubmitting}
+                            />
+                            <label
+                              htmlFor={`seat-${seatNumber}`}
+                              className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
+                            >
+                              Seat {seatNumber}
+                            </label>
+                          </div>
+                        ))}
+                      </div>
                     </div>
-                  ))}
-                </div>
-              </div>
+                  ) : (
+                    <p className="text-sm text-muted-foreground pt-2">
+                      No passenger seats available for this vehicle.
+                    </p>
+                  );
+                })()
+              ) : (
+                <p className="text-sm text-muted-foreground pt-2">
+                  Select a car brand and model to configure available seats.
+                </p>
+              )}
 
               {/* Selected Seats Display */}
               {selectedSeats.length > 0 && (

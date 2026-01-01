@@ -44,6 +44,7 @@ import {
 import { Loader2, Plus, Edit, Trash2, Car } from "lucide-react";
 import type { Database } from "@/types/database.types";
 import { formatSeatsForDisplay } from "@/lib/utils/seatConfig";
+import { getAvailableSeatsForModel } from "@/lib/utils/carData";
 
 type CarPreset = Database["public"]["Tables"]["car_presets"]["Row"];
 
@@ -101,9 +102,38 @@ export default function CarPresetsPage() {
 
   /**
    * Format available seats display (using utility function)
+   * If the car model has a known default seat configuration, use that as the reference.
+   * Otherwise, show what's saved in the database.
    */
-  const formatAvailableSeats = (seats: number[] | null): string => {
-    return formatSeatsForDisplay(seats, { emptyMessage: "No default seats set" });
+  const formatAvailableSeats = (preset: CarPreset): string => {
+    // First, try to get expected seats from the model data
+    const expectedSeats = getAvailableSeatsForModel(preset.brand, preset.model);
+    
+    // If we have expected seats from the model, use those for display
+    // This ensures consistency with the car type
+    if (expectedSeats.length > 0) {
+      // If the saved seats match the expected (or are close), show the expected format
+      // Otherwise, show what's actually saved (user customized it)
+      const savedSeats = preset.default_available_seats || [];
+      const savedSeatsSet = new Set(savedSeats);
+      const expectedSeatsSet = new Set(expectedSeats);
+      
+      // Check if saved seats are a subset of expected (user unselected some)
+      const isSubset = savedSeats.every(seat => expectedSeatsSet.has(seat));
+      
+      // If saved seats match expected or are a subset, show in the nice format
+      // Otherwise, show what's actually saved
+      if (savedSeats.length === 0 || isSubset) {
+        // Show expected seats (what should be available for this model)
+        return formatSeatsForDisplay(expectedSeats, { emptyMessage: "No default seats set" });
+      } else {
+        // User has customized beyond expected, show what's saved
+        return formatSeatsForDisplay(savedSeats, { emptyMessage: "No default seats set" });
+      }
+    }
+    
+    // Fallback to showing what's saved in the database
+    return formatSeatsForDisplay(preset.default_available_seats, { emptyMessage: "No default seats set" });
   };
 
   // Show loading state while checking auth or fetching
@@ -215,7 +245,7 @@ export default function CarPresetsPage() {
                     <div>
                       <span className="text-sm font-medium">Default Seats: </span>
                       <span className="text-sm text-muted-foreground">
-                        {formatAvailableSeats(preset.default_available_seats)}
+                        {formatAvailableSeats(preset)}
                       </span>
                     </div>
                   </CardContent>

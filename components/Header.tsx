@@ -11,7 +11,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Menu, User, LogOut, Car, Ticket, Home } from "lucide-react";
+import { Menu, User, LogOut, Car, Ticket, Home, Gauge } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/useAuth";
 
@@ -55,11 +55,17 @@ export function Header() {
     return user?.email?.charAt(0).toUpperCase() || "U";
   };
 
-  const navLinks = [
-    { href: "/", label: "Home", icon: Home },
-    { href: "/events", label: "Events", icon: Ticket },
-    { href: "/rides", label: "My Rides", icon: Car },
-  ];
+  // Navigation links based on authentication status
+  const navLinks = isAuthenticated
+    ? [
+        { href: "/events", label: "Events", icon: Ticket },
+        { href: "/rides", label: "My Rides", icon: Car },
+        { href: "/profile/cars", label: "My Cars", icon: Gauge },
+      ]
+    : [
+        { href: "/", label: "Home", icon: Home },
+        { href: "/events", label: "Events", icon: Ticket },
+      ];
 
   return (
     <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
@@ -123,6 +129,12 @@ export function Header() {
                 </div>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem asChild>
+                  <Link href="/" className="flex items-center">
+                    <Home className="mr-2 h-4 w-4" />
+                    Home
+                  </Link>
+                </DropdownMenuItem>
+                <DropdownMenuItem asChild>
                   <Link href="/profile" className="flex items-center">
                     <User className="mr-2 h-4 w-4" />
                     Profile
@@ -132,6 +144,12 @@ export function Header() {
                   <Link href="/rides" className="flex items-center">
                     <Car className="mr-2 h-4 w-4" />
                     My Rides
+                  </Link>
+                </DropdownMenuItem>
+                <DropdownMenuItem asChild>
+                  <Link href="/profile/cars" className="flex items-center">
+                    <Gauge className="mr-2 h-4 w-4" />
+                    My Cars
                   </Link>
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
