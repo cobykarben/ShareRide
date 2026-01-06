@@ -10,7 +10,7 @@
  * 2. User is redirected to Google for authentication
  * 3. Google redirects back to this route with a 'code' parameter
  * 4. This route exchanges the code for a session using Supabase
- * 5. User is redirected to the dashboard/homepage
+ * 5. User is redirected to the rides page
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -20,7 +20,7 @@ export async function GET(request: NextRequest) {
   const requestUrl = new URL(request.url);
   const code = requestUrl.searchParams.get("code");
   // Get the next URL to redirect to after authentication (optional)
-  // If not specified, defaults to /dashboard
+  // If not specified, defaults to /rides
   const next = requestUrl.searchParams.get("next");
 
   // If there's no code parameter, redirect to home (or login page)
@@ -49,8 +49,8 @@ export async function GET(request: NextRequest) {
     }
 
     // Success! User is now authenticated
-    // Redirect to homepage (or next URL if specified)
-    const redirectUrl = next || "/dashboard";
+    // Redirect to rides page (or next URL if specified)
+    const redirectUrl = next || "/rides";
     return NextResponse.redirect(new URL(redirectUrl, requestUrl.origin));
   } catch (error) {
     console.error("Unexpected error in OAuth callback:", error);
